@@ -1,61 +1,21 @@
-use std::fs;
-use std::path::{Path, PathBuf};
-use std::error::Error;
-use std::io::{self, Write, Read};
+use std::path::Path;
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
-use font_kit::font::Font;
 use std::env;
-use rayon::prelude::*;
-use ttf_parser::Face;
-use regex::Regex;
-use std::fmt;
 
-#[derive(Clone)]
-struct Config {
-    debug_mode: bool,
-    naming_pattern: NamingPattern,
-    group_by_foundry: bool,
-}
+mod error;
+mod models;
+mod utils;
+mod font;
+mod organizer;
+mod cli;
 
-#[derive(Debug, Clone, Copy, PartialEq)]
-enum NamingPattern {
-    FamilySubfamily,          // "Helvetica (Bold)"
-    FoundryFamilySubfamily,   // "Adobe Helvetica (Bold)"
-    FamilyWeight,             // "Helvetica 700"
-    FoundryFamily,            // "Adobe/Helvetica"
-}
+use error::{Result, Error};
+use models::Config;
+use organizer::{organize_fonts, batch_process, group_by_foundry};
+use cli::{parse_args, get_help_message, get_user_input, get_user_choice, ask_group_by_foundry};
 
-impl fmt::Display for NamingPattern {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            NamingPattern::FamilySubfamily => write!(f, "%Family% (%Subfamily%)"),
-            NamingPattern::FoundryFamilySubfamily => write!(f, "%Foundry% %Family% (%Subfamily%)"),
-            NamingPattern::FamilyWeight => write!(f, "%Family% %Weight%"),
-            NamingPattern::FoundryFamily => write!(f, "%Foundry%/%Family%"),
-        }
-    }
-}
-
-#[derive(Clone)]
-struct FontMetadata {
-    family_name: String,
-    subfamily: String,
-    full_name: String,
-    foundry: String,
-    weight: u16,
-    is_italic: bool,
-    original_path: PathBuf,
-}
-
-#[derive(Hash, Eq, PartialEq, Debug)]
-struct FontSignature {
-    family_name: String,
-    weight: u16,
-    is_italic: bool,
-}
-
-fn main() -> Result<(), Box<dyn Error>> {
+fn main() -> Result<()> {
     let args: Vec<String> = env::args().collect();
 
     // Check if help is requested
@@ -64,23 +24,11 @@ fn main() -> Result<(), Box<dyn Error>> {
         return Ok(());
     }
 
-    // Parse naming pattern from arguments
-    let naming_pattern = if args.contains(&"--foundry-family-subfamily".to_string()) {
-        NamingPattern::FoundryFamilySubfamily
-    } else if args.contains(&"--family-weight".to_string()) {
-        NamingPattern::FamilyWeight
-    } else if args.contains(&"--foundry-family".to_string()) {
-        NamingPattern::FoundryFamily
-    } else {
-        // Default pattern
-        NamingPattern::FamilySubfamily
-    };
-
-    let config = Config {
-        debug_mode: args.contains(&"--debug".to_string()),
-        naming_pattern,
-        group_by_foundry: false,
-    };
+    // Initialize configuration
+    let config = Config::new(
+        args.contains(&"--debug".to_string()),
+        parse_args(),
+    );
 
     if config.debug_mode {
         println!("Debug mode enabled");
@@ -95,71 +43,47 @@ fn main() -> Result<(), Box<dyn Error>> {
                 return batch_process(&config, &batch_file);
             } else {
                 println!("Error: Batch file '{}' not found", batch_file.display());
-                return Err(Box::new(io::Error::new(
-                    io::ErrorKind::NotFound,
-                    format!("Batch file '{}' not found", batch_file.display()),
-                )));
+                return Err(Error::InvalidPath(batch_file));
             }
         } else {
             println!("Error: --batch option requires a file path");
-            return Err(Box::new(io::Error::new(
-                io::ErrorKind::InvalidInput,
-                "--batch option requires a file path",
-            )));
+            return Err(Error::Config("--batch option requires a file path".to_string()));
         }
     }
 
-    // If not in batch mode, process a single directory
+    // Process single directory
     let font_dir = get_user_input(&config)?;
 
     // Initialize shared data structures
     let processed_files = Arc::new(Mutex::new(HashSet::new()));
-    let _family_folders = Arc::new(Mutex::new(HashMap::new()));
-    let _foundry_folders = Arc::new(Mutex::new(HashMap::new()));
+    let family_folders = Arc::new(Mutex::new(HashMap::new()));
+    let foundry_folders = Arc::new(Mutex::new(HashMap::new()));
 
-    // Ask user what they want to do
-    println!("What would you like to do?");
-    println!("1. Sort fonts (organize by family)");
-    println!("2. Group font folders by foundry");
-    print!("Enter your choice (1 or 2): ");
-    io::stdout().flush()?;
-
-    let mut choice = String::new();
-    io::stdin().read_line(&mut choice)?;
-    let choice = choice.trim();
-
-    match choice {
+    match get_user_choice()?.as_str() {
         "1" => {
-            // Process the directory
             organize_fonts(
                 &font_dir,
                 &config,
                 processed_files.clone(),
-                _family_folders.clone(),
-                _foundry_folders.clone()
+                family_folders.clone(),
+                foundry_folders.clone()
             )?;
 
             println!("Font organization complete!");
 
-            // Ask if user wants to group by foundry
-            print!("Would you like to group fonts by foundry? (y/n): ");
-            io::stdout().flush()?;
-
-            let mut input = String::new();
-            io::stdin().read_line(&mut input)?;
-
-            if input.trim().to_lowercase() == "y" {
+            if ask_group_by_foundry()? {
                 println!("Grouping fonts by foundry...");
-                let mut config_with_foundry = config.clone();
-                config_with_foundry.group_by_foundry = true;
+                let config_with_foundry = Config {
+                    group_by_foundry: true,
+                    ..config
+                };
 
-                // Group fonts by foundry
                 group_by_foundry(
                     &font_dir,
                     &config_with_foundry,
                     processed_files,
-                    _family_folders,
-                    _foundry_folders
+                    family_folders,
+                    foundry_folders
                 )?;
 
                 println!("Fonts grouped by foundry successfully!");
@@ -167,28 +91,15 @@ fn main() -> Result<(), Box<dyn Error>> {
         },
         "2" => {
             println!("Grouping fonts by foundry...");
-            let mut config_with_foundry = config.clone();
-            config_with_foundry.group_by_foundry = true;
+            let config_with_foundry = Config {
+                group_by_foundry: true,
+                ..config
+            };
 
-            // Group fonts by foundry
             group_by_foundry(
                 &font_dir,
                 &config_with_foundry,
-                processed_files,
-                _family_folders,
-                _foundry_folders
-            )?;
-
-            println!("Fonts grouped by foundry successfully!");
-        },
-        _ => {
-            println!("Invalid choice. Exiting.");
-            return Ok(());
-        }
-    }
-
-    Ok(())
-}
+                processed_
 
 fn get_user_input(config: &Config) -> Result<PathBuf, Box<dyn Error>> {
     let args: Vec<String> = env::args().collect();
