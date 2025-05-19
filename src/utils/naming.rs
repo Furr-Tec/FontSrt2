@@ -57,6 +57,11 @@ pub fn normalize_family_name(family_name: &str) -> String {
         " Mono", // Mono variant
     ];
     
+    // Also add the embedded preserve terms (without spaces)
+    let embedded_preserve_terms = [
+        "Alt", "CF", "NF", "SC", "Text", "Display",
+    ];
+    
     // Check if name contains any preserved terms before normalizing
     for term in &preserve_terms {
         if normalized.contains(term) {
@@ -77,7 +82,112 @@ pub fn normalize_family_name(family_name: &str) -> String {
         }
     }
     
-    // Step 2: Handle weight and style variations in family names
+    // Step 1.5: Handle embedded style/weight indicators without spaces (e.g., "ElaSansBlack" -> "ElaSans")
+    let embedded_style_indicators = [
+        "Bold", "Italic", "Black", "Light", "Medium", "Thin", "Regular", 
+        "Semibold", "SemiBold", "DemiBold", "ExtraBold", "UltraBold", "ExtraLight", "UltraLight",
+        "Condensed", "Expanded", "Extended", "Narrow", "Wide", "Compressed",
+        "Oblique", "Slant", "Slanted", "BoldItalic", "LightItalic", "BlackItalic", "MediumItalic",
+        "ThinItalic", "SemiBoldItalic", "SemiLightItalic", "Variable", "Hairline", "Book",
+        "Heavy", "Ultra", "Super", "Poster", "Title", "Caps"
+    ];
+    
+    // Special case for font families like "ElaSans" and their variants
+    let mut normalized_name = normalized.clone();
+    let mut made_changes = false;
+    
+    // Note: Sans, Serif, and Mono are typically not standalone style indicators by themselves
+    // They're often legitimate parts of family names (like "Roboto Sans") so we don't include them individually
+    // but we do handle compound cases like "SansBold", "SerifItalic", etc.
+    
+    // Loop through potentially multiple passes to handle nested/consecutive style indicators
+    loop {
+        made_changes = false;
+        let mut best_match = None;
+        let mut best_match_pos = normalized_name.len();
+        
+        // Find the earliest embedded style indicator
+        for indicator in &embedded_style_indicators {
+            // Skip case for embedded preserve terms
+            let mut should_skip = false;
+            for term in &embedded_preserve_terms {
+                if indicator == term {
+                    should_skip = true;
+                    break;
+                }
+            }
+            if should_skip {
+                continue;
+            }
+            
+            // Check if indicator is embedded and not at the start
+            if let Some(pos) = normalized_name.find(indicator) {
+                // Ensure it's not at the very beginning of the string
+                if pos > 0 {
+                    // Check if it's truly embedded (not just part of another word)
+                    let prefix_char = normalized_name.chars().nth(pos - 1).unwrap_or(' ');
+                    
+                    // Only consider it a match if it's:
+                    // - Not preceded by a space (which would be caught by suffix checks)
+                    // - Not in the middle of a legitimate word
+                    if prefix_char != ' ' && !prefix_char.is_lowercase() {
+                        // Handle special cases like "SansBold" where "Sans" should be preserved
+                        let prefix = &normalized_name[0..pos];
+                        
+                        // Skip if the prefix ends with a preserved term without space
+                        let mut is_preserved_prefix = false;
+                        for term in &["Sans", "Serif", "Mono"] {
+                            if prefix.ends_with(term) {
+                                is_preserved_prefix = true;
+                                break;
+                            }
+                        }
+                        
+                        // If we're not dealing with a preserved prefix and this match is earlier than our best match
+                        if !is_preserved_prefix && pos < best_match_pos {
+                            best_match = Some((pos, indicator.len()));
+                            best_match_pos = pos;
+                        }
+                    }
+                }
+            }
+        }
+        
+        // Apply the best match if found
+        if let Some((pos, len)) = best_match {
+            // Get the part before the indicator
+            let prefix = &normalized_name[0..pos];
+            // Get the part after the indicator (if any)
+            let suffix = if pos + len < normalized_name.len() {
+                &normalized_name[pos + len..]
+            } else {
+                ""
+            };
+            
+            // Only normalize if the prefix is at least 3 characters (to avoid over-normalization)
+            if prefix.len() >= 3 {
+                // When handling consecutive style indicators, we need to keep processing
+                normalized_name = format!("{}{}", prefix, suffix);
+                made_changes = true;
+            } else {
+                // If prefix is too short, don't normalize and exit the loop
+                made_changes = false;
+            }
+        } else {
+            // No match found, exit the loop
+            made_changes = false;
+        }
+        
+        // Break the loop if no changes were made in this iteration
+        if !made_changes {
+            break;
+        }
+    }
+    
+    // Update normalized with our processed name
+    normalized = normalized_name;
+    
+    // Step 2: Handle weight and style variations in family names (with spaces)
     let style_indicators = [
         " Bold", " Italic", " Black", " Light", " Medium", " Thin", " Regular", 
         " Semibold", " SemiBold", " DemiBold", " ExtraBold", " UltraBold", " ExtraLight", " UltraLight",
@@ -102,7 +212,7 @@ pub fn normalize_family_name(family_name: &str) -> String {
     }
     
     // Step 4: Handle suffixes
-    let suffixes = [" Pro", " Std", " LT", " MT", " MS", " Bk", " Lt", " Md", " Bd", " Rg"];
+    let suffixes = [" Pro ", " Std ", " LT ", " MT ", " MS ", " Bk ", " Lt ", " Md ", " Bd ", " Rg "];
     for suffix in &suffixes {
         if normalized.ends_with(suffix) {
             normalized = normalized[0..normalized.len() - suffix.len()].trim().to_string();
@@ -110,9 +220,9 @@ pub fn normalize_family_name(family_name: &str) -> String {
     }
     
     // Step 5: Special case handling for specific patterns we've identified
-    // Group "Einer Grotesk" and "Einer Grotesk Hairline" together
-    if normalized.starts_with("Einer Grotesk") {
-        normalized = "Einer Grotesk".to_string();
+    // Group "Einer Grotesk " and "Einer Grotesk Hairline " together
+    if normalized.starts_with("Einer Grotesk ") {
+        normalized = "Einer Grotesk ".to_string();
     }
     
     // Step 6: Cleanup any remaining whitespace
@@ -157,7 +267,7 @@ pub fn format_font_name(metadata: &FontMetadata, pattern: &NamingPattern) -> Str
             format!("{} {}{}", 
                 metadata.family_name, 
                 metadata.weight,
-                if metadata.is_italic { " Italic" } else { "" }
+                if metadata.is_italic { " Italic " } else { "" }
             )
         },
         FoundryFamily => {
@@ -183,6 +293,7 @@ pub fn generate_font_filename(metadata: &FontMetadata, pattern: &NamingPattern) 
 }
 
 /// Build the target folder path for a font
+#[allow(dead_code)]
 pub fn build_folder_path(base_dir: &Path, metadata: &FontMetadata, config: &Config) -> PathBuf {
     // Normalize the family name first to ensure proper grouping
     let normalized_family = normalize_family_name(&metadata.family_name);
@@ -205,4 +316,5 @@ pub fn build_folder_path(base_dir: &Path, metadata: &FontMetadata, config: &Conf
         }
     }
 }
+
 

@@ -12,7 +12,6 @@ use crate::utils::{
     clean_name,
     log,
     format_font_name,
-    build_folder_path,
     normalize_family_name,
 };
 
