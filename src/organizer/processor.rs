@@ -13,6 +13,7 @@ use crate::utils::{
     log,
     format_font_name,
     build_folder_path,
+    normalize_family_name,
 };
 
 // The utility functions for formatting font names and building paths
@@ -24,8 +25,8 @@ pub fn organize_fonts(
     dir: &Path,
     config: &Config,
     processed_files: Arc<Mutex<HashSet<PathBuf>>>,
-    _family_folders: Arc<Mutex<HashMap<String, PathBuf>>>,
-    _foundry_folders: Arc<Mutex<HashMap<String, PathBuf>>>,
+    family_folders: Arc<Mutex<HashMap<String, PathBuf>>>,
+    foundry_folders: Arc<Mutex<HashMap<String, PathBuf>>>,
 ) -> Result<()> {
     let duplicates_dir = dir.join("duplicates");
     ensure_directory_exists(&duplicates_dir, config)?;
@@ -70,76 +71,175 @@ pub fn organize_fonts(
     log(config, format!("Collected metadata for {} fonts", 
         font_metadata_map.lock().unwrap().len()));
 
-    // Create directory structure and move files
+    // Group fonts by normalized family name
     let metadata_map = font_metadata_map.lock().unwrap().clone();
     let metadata_count = metadata_map.len();
-
+    
+    // Create a map of normalized family names to lists of (path, metadata) pairs
+    let mut family_groups: HashMap<String, Vec<(PathBuf, FontMetadata)>> = HashMap::new();
+    
     for (path, metadata) in &metadata_map {
-        let mut processed_set = processed_files.lock().unwrap();
+        // Use normalized family name as the grouping key
+        let normalized_family = normalize_family_name(&metadata.family_name);
+        
+        family_groups
+            .entry(normalized_family)
+            .or_insert_with(Vec::new)
+            .push((path.clone(), metadata.clone()));
+    }
+    
+    log(config, format!("Grouped fonts into {} families", family_groups.len()));
 
-        if processed_set.contains(path) {
+    // Process each family group
+    for (family_name, font_group) in family_groups {
+        if font_group.is_empty() {
             continue;
         }
-
-        processed_set.insert(path.clone());
-
-        // Determine target directory based on naming pattern
-        let target_dir = build_folder_path(dir, metadata, config);
-        ensure_directory_exists(&target_dir, config)?;
-
-        // Format new filename based on naming pattern
-        let base_name = format_font_name(metadata, &config.naming_pattern);
-        let clean_base_name = clean_name(&base_name);
-
-        // Get file extension
-        let extension = path.extension()
-            .and_then(|ext| ext.to_str())
-            .unwrap_or("ttf")
-            .to_lowercase();
-
-        // Create new filename
-        let new_filename = format!("{}.{}", clean_base_name, extension);
-        let new_path = target_dir.join(&new_filename);
-
-        // Handle file move or duplicate
-        if new_path.exists() {
-            let mut unique_name = new_filename.clone();
-            let mut counter = 1;
-
-            while target_dir.join(&unique_name).exists() {
-                let name_part = clean_base_name.clone();
-                unique_name = format!("{}_{}.{}", name_part, counter, extension);
-                counter += 1;
-            }
-
-            let final_path = target_dir.join(unique_name);
-
-            log(
-                config,
-                format!(
-                    "Font with same name exists. Renaming {} to {}",
-                    path.display(),
-                    final_path.display()
-                ),
-            );
-
-            if let Err(e) = safe_move_file(path, &final_path, config) {
-                log(
-                    config,
-                    format!("Error moving file {}: {}", path.display(), e),
-                );
+        
+        log(config, format!("Processing family group: {} with {} fonts", family_name, font_group.len()));
+        
+        // Create a directory specifically for this normalized family name
+        // Don't rely on build_folder_path which might use the original family name
+        let family_dir = if config.group_by_foundry {
+            // If grouping by foundry is enabled, create a foundry/family structure
+            let first_font = &font_group[0];
+            let foundry_name = clean_name(&first_font.1.foundry);
+            // Handle potential empty foundry name
+            let foundry_dir = if foundry_name.is_empty() {
+                dir.join("Unknown_Foundry")
+            } else {
+                dir.join(foundry_name)
+            };
+            
+            if let Err(e) = ensure_directory_exists(&foundry_dir, config) {
+                log(config, format!("Error creating foundry directory {}: {}", foundry_dir.display(), e));
+                // Fall back to base directory if foundry directory creation fails
+                dir.join(clean_name(&family_name))
+            } else {
+                foundry_dir.join(clean_name(&family_name))
             }
         } else {
-            log(
-                config,
-                format!("Moving {} to {}", path.display(), new_path.display()),
-            );
-
-            if let Err(e) = safe_move_file(path, &new_path, config) {
+            // Otherwise, use the normalized family name directly
+            dir.join(clean_name(&family_name))
+        };
+        
+        // Create the directory once per family
+        if let Err(e) = ensure_directory_exists(&family_dir, config) {
+            log(config, format!("Error creating family directory {}: {}", family_dir.display(), e));
+            // Skip this family group if we can't create the directory
+            continue;
+        }
+        
+        log(config, format!("Created directory for family {}: {}", family_name, family_dir.display()));
+        
+        // Store folder reference for potential foundry grouping later
+        if config.group_by_foundry {
+            let clean_family = clean_name(&family_name);
+            family_folders.lock().unwrap().insert(clean_family.clone(), family_dir.clone());
+            
+            let first_font = &font_group[0];
+            let clean_foundry = clean_name(&first_font.1.foundry);
+            let parent_dir = family_dir.parent().unwrap_or(dir).to_path_buf();
+            foundry_folders.lock().unwrap().insert(clean_foundry.clone(), parent_dir.clone());
+                
+            log(config, format!("Registered family folder: {} -> {}", clean_family, family_dir.display()));
+            log(config, format!("Registered foundry folder: {} -> {}", clean_foundry, parent_dir.display()));
+        }
+        
+        // Process each font in the family
+        for (path, metadata) in font_group {
+            let mut processed_set = processed_files.lock().unwrap();
+            
+            if processed_set.contains(&path) {
+                continue;
+            }
+            
+            processed_set.insert(path.clone());
+            
+            // Format new filename based on naming pattern
+            let base_name = format_font_name(&metadata, &config.naming_pattern);
+            let clean_base_name = clean_name(&base_name);
+            
+            // Get file extension
+            let extension = path.extension()
+                .and_then(|ext| ext.to_str())
+                .unwrap_or("ttf")
+                .to_lowercase();
+            
+            // Create new filename
+            let new_filename = format!("{}.{}", clean_base_name, extension);
+            let new_path = family_dir.join(&new_filename);
+            
+            // Verify the target directory is correct for this font
+            let normalized_font_family = normalize_family_name(&metadata.family_name);
+            let expected_dir_name = clean_name(&normalized_font_family);
+            let actual_dir_name = family_dir.file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or("");
+                
+            if expected_dir_name != actual_dir_name && !config.group_by_foundry {
                 log(
                     config,
-                    format!("Error moving file {}: {}", path.display(), e),
+                    format!(
+                        "WARNING: Font family mismatch - {} should go to {} but is being placed in {}",
+                        path.display(),
+                        expected_dir_name,
+                        actual_dir_name
+                    ),
                 );
+            }
+            
+            // Handle file move or duplicate
+            if new_path.exists() {
+                let mut unique_name = new_filename.clone();
+                let mut counter = 1;
+                
+                // Use family_dir instead of target_dir (which no longer exists)
+                while family_dir.join(&unique_name).exists() {
+                    let name_part = clean_base_name.clone();
+                    unique_name = format!("{}_{}.{}", name_part, counter, extension);
+                    counter += 1;
+                }
+                
+                let final_path = family_dir.join(unique_name);
+                
+                log(
+                    config,
+                    format!(
+                        "Font with same name exists. Renaming {} to {}",
+                        path.display(),
+                        final_path.display()
+                    ),
+                );
+                
+                if let Err(e) = safe_move_file(&path, &final_path, config) {
+                    log(
+                        config,
+                        format!("Error moving file {}: {}", path.display(), e),
+                    );
+                } else {
+                    log(
+                        config,
+                        format!("Successfully moved {} to {}", path.display(), final_path.display()),
+                    );
+                }
+            } else {
+                log(
+                    config,
+                    format!("Moving {} to {}", path.display(), new_path.display()),
+                );
+                
+                if let Err(e) = safe_move_file(&path, &new_path, config) {
+                    log(
+                        config,
+                        format!("Error moving file {}: {}", path.display(), e),
+                    );
+                } else {
+                    log(
+                        config,
+                        format!("Successfully moved {} to {}", path.display(), new_path.display()),
+                    );
+                }
             }
         }
     }

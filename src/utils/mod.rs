@@ -7,7 +7,8 @@ pub use naming::{
     clean_name,
     format_font_name,
     generate_font_filename,
-    build_folder_path
+    build_folder_path,
+    normalize_family_name
 };
 pub use logging::log;
 
