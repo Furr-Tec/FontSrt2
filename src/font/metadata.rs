@@ -99,26 +99,45 @@ pub fn extract_font_metadata(path: &Path, config: &Config) -> Result<Option<Font
 /// # Returns
 /// * `String` - The root family name to use for grouping
 pub fn extract_root_family(family_name: &str) -> String {
-    // Common subfamily markers to trigger root delimiting
-    // This is heuristic: "Festivo Basic", "Festivo Lines", etc. ⇒ root = "Festivo"
-    // Will now also handle numeric-suffixed variants, e.g., "Gerlach 100" ⇒ "Gerlach"
-    const MARKERS: [&str; 11] = [
-        "Basic", "Extras", "Lines", "Shadows", "Shadow", "Sketch", "Sketch1", "Sketch2", "Sketch3", "Extra", "Black"
+    //! Improved heuristic to extract the true root family from complex font naming patterns.
+    //!
+    //! - Markers expanded with ["Drawn", "Rough", "Stamp", "Orn", "Titling", "Sm", "CF"]
+    //! - If three tokens and the third is a marker or numeric, treat the first two as root (e.g., "Golden Cockerel Orn" → "Golden Cockerel")
+    //! - Handles combinations with prior/numeric markers.
+    //! - For 4+ tokens with the third or fourth as marker/numeric, join tokens up to the marker or number.
+    //! - Defaults to full name if no split applies.
+
+    // Extended subfamily markers and suffixes.
+    const MARKERS: [&str; 18] = [
+        "Basic", "Extras", "Lines", "Shadows", "Shadow", "Sketch", "Sketch1", "Sketch2", "Sketch3",
+        "Extra", "Black", "Drawn", "Rough", "Stamp", "Orn", "Titling", "Sm", "CF"
     ];
     let tokens: Vec<&str> = family_name.split_whitespace().collect();
-    if tokens.len() > 1 {
-        for (idx, token) in tokens.iter().enumerate().skip(1) {
-            if MARKERS.iter().any(|m| m.eq_ignore_ascii_case(token)) {
-                // Join tokens from 0..idx for the stable root
-                return tokens[..idx].join(" ");
-            }
-            // NEW: treat numeric tokens as subfamily delimiters
-            if token.chars().all(|c| c.is_ascii_digit()) {
+    let len = tokens.len();
+    if len >= 3 {
+        // Allow explicit two-word roots (e.g., Golden Cockerel Orn → Golden Cockerel)
+        // If the third token is a marker or numeric, join just the first two.
+        if MARKERS.iter().any(|m| m.eq_ignore_ascii_case(tokens[2])) || tokens[2].chars().all(|c| c.is_ascii_digit()) {
+            return format!("{} {}", tokens[0], tokens[1]);
+        }
+    }
+    if len >= 4 {
+        // In rare cases with more tokens, join up through but not including the first marker/numeric found after the root
+        for (idx, token) in tokens.iter().enumerate().skip(2) {
+            if MARKERS.iter().any(|m| m.eq_ignore_ascii_case(token)) || token.chars().all(|c| c.is_ascii_digit()) {
                 return tokens[..idx].join(" ");
             }
         }
     }
-    // Return the whole family name if no marker or numeric match found
+    if len > 1 {
+        // Legacy heuristic for any marker/numeric from the second word onward
+        for (idx, token) in tokens.iter().enumerate().skip(1) {
+            if MARKERS.iter().any(|m| m.eq_ignore_ascii_case(token)) || token.chars().all(|c| c.is_ascii_digit()) {
+                return tokens[..idx].join(" ");
+            }
+        }
+    }
+    // Fallback: single-word name or no applicable split
     family_name.trim().to_string()
 }
 /// Check if a file is already organized in the correct structure and has the correct name
