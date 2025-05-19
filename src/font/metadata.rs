@@ -84,6 +84,39 @@ pub fn extract_font_metadata(path: &Path, config: &Config) -> Result<Option<Font
     }
 }
 
+
+/// Extract the root family name (the true shared "family" for grouping).
+/// This handles cases where multiple subfamily/variant folders (e.g. "Festivo Basic", "Festivo Sketch1", "Festivo Sketch2") should be grouped under a common root ("Festivo").
+///
+/// The heuristic splits the family name at the first non-root token. Tokens like "Basic", "Sketch", "Line", "Shadow", "Extra", etc. will be considered subfamily/subvariant markers if they come AFTER the root.
+/// If the family name is single-word or doesn't match this pattern, the whole family name is returned.
+///
+/// This function may be extended for broader family name normalization as patterns emerge.
+///
+/// # Arguments
+/// * `family_name` - Raw family name extracted from font metadata
+///
+/// # Returns
+/// * `String` - The root family name to use for grouping
+pub fn extract_root_family(family_name: &str) -> String {
+    // Common subfamily markers to trigger root delimiting
+    // This is heuristic: "Festivo Basic", "Festivo Lines", etc. ⇒ root = "Festivo"
+    // Can be extended as more project samples are discovered.
+    const MARKERS: [&str; 11] = [
+        "Basic", "Extras", "Lines", "Shadows", "Shadow", "Sketch", "Sketch1", "Sketch2", "Sketch3", "Extra", "Black"
+    ];
+    let tokens: Vec<&str> = family_name.split_whitespace().collect();
+    if tokens.len() > 1 {
+        for (idx, token) in tokens.iter().enumerate().skip(1) {
+            if MARKERS.iter().any(|m| m.eq_ignore_ascii_case(token)) {
+                // Join tokens from 0..idx for the stable root
+                return tokens[..idx].join(" ");
+            }
+        }
+    }
+    // Return the whole family name if no marker match found
+    family_name.trim().to_string()
+}
 /// Check if a file is already organized in the correct structure and has the correct name
 #[allow(dead_code)]
 pub fn is_already_organized(path: &Path, metadata: &FontMetadata, config: &Config) -> bool {

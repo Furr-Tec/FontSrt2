@@ -50,16 +50,42 @@ pub fn normalize_family_name(family_name: &str) -> String {
 
     // 3. Comprehensive, deduplicated style/weight/variant indicator arrays
     // (Suffixes, embedded, and known concatenated forms)
+    // Comprehensive and future-proof indicator set for universal normalization
+    // Includes all style, weight, width, feature, script, edition, vendor, region, case, demo/trial, alternate, shortform, and numeric/variant tokens
+    // Policy: Any token in this array will be stripped from font family names for grouping
     let style_indicators = [
-        // Primary style/weight tokens (add more as needed for new foundries/variants)
-        "Bauhaus", "Text", "SmallCaps", "Variable", "Italic", "Oblique", "Caps", "Display", "Serif", "Sans", "Mono", "MonoIt", "MonoItalic", "Hand", "SC", "LC", "Rounded", "Stencil", "Shadow", "Grotesk", "Poster", "Title",
-        "Cmp", "CmpIt", "CmpXBold", "CmpXLight", "CmpMedium", "CmpLight", "Cnd", "CndIt", "CndXBold", "CndXLight", "CndMedium", "CndLight",
-        "Bold", "SemiBold", "ExtraBold", "UltraBold", "SemiLight", "Light", "Medium", "Thin", "Black", "Heavy", "Book", "Super", "Hairline", "Outline", "Wide", "Narrow", "Compressed", "Expanded", "Extended",
-        "Condensed", "Expanded", "Extended", "Narrow", "Wide", "Compressed", "DemiBold", "Pro", "Std", "Bk", "Lt", "Md", "Bd", "Rg", "Roman", "Script", "Shadow", "Engraved", "NC", "LC", "UC", "Serif", "SansSerif", "Calligraphy", "Gothic", "Regular", "Normal",
-        // Additional indicators for exhaustive coverage
-        "BlackItalic", "BoldItalic", "BookItalic", "ExtraBoldItalic", "ItalicBold", "ItalicBook", "LightItalic", "MediumItalic", "ObliqueBold", "ObliqueLight", "ObliqueMedium", "ThinItalic", "None", "Insert", "Delete", "SuperBold",
-        "CapsItalic", "BlackCapsItalic", "BoldCapsItalic", "AllCaps", "Ultra", "UltraCondensed", "UltraExpanded", "UltraLight", "UltraWide", "XLight", "XBold", "XXBold", "XXLight", "BoldXLight",
-        "Number", "Numeral", "Double", "Single", "LC", "SC", "Roman", "LC", "Wide", "Round", "HeavyItalic", "MediumCaps", "Soft", "Expert", "PosterItalic"
+        // --- General style/weight/width modifiers ---
+        "Thin", "UltraThin", "ExtraThin", "Black", "UltraBlack", "ExtraBlack", "Bold", "ExtraBold", "UltraBold", "SemiBold", "DemiBold", "Regular", "Medium", "Book", "Light", "ExtraLight", "UltraLight", "SuperLight",
+        "Poster", "Title", "Text", "Subhead", "Deck", "Caption", "Display", "Mini", "Micro", "Small", "Core", "Expert",
+        // --- Slant, posture, script ---
+        "Italic", "It", "Oblique", "Slant", "Slanted", "Upright", "Roman", "Standing",
+        // --- Width/layout ---
+        "Condensed", "ExtraCondensed", "UltraCondensed", "Compressed", "SemiCondensed", "Narrow", "Wide", "SemiWide", "Expanded", "ExtraExpanded", "UltraExpanded", "Extended", "ExtraExtended", "UltraExtended",
+        // --- Case/feature/variant alternates ---
+        "AllCaps", "SmallCaps", "SC", "LC", "UC", "Outline", "OutlineItalic", "Shadow", "ShadowItalic", "Stencil", "StencilItalic",
+        "Soft", "Sharp", "Fat", "Jumbo", "Super", "Hairline", "Grotesk", "Grotesque", "Gothic", "Script", "Sans", "Serif", "Mono", "Monospace", "Roman", "Rounded",
+        // --- Numerics, version/edition/region ---
+        "Number", "Numeral", "Double", "Single", "Ed", "Edition", "Core", "VF", "Var", "Variable", "Preview", "Demo", "Trial", "Icon", "Icons", "Glyph", "Glyphs", "Ornaments", "Inline", "Line", "InlineFill", "Fill", "Stripes", "Dots", "Wood", "3D",
+        // --- Language/script/region ---
+        "Arabic", "Greek", "Cyrillic", "Devanagari", "CJK", "JP", "JA", "KR", "TC", "SC", "VN", "Intl", "Int", "International", "Latin", "Rus", "Grk", "Kor", "Jap",
+        // --- Vendor/industry initials ---
+        "TT", "OTF", "TTF", "ITC", "BT", "LT", "MT", "LL", "W1G", "Std", "Pro", "Alt", "Alternate", "Expert", "Prime", "TTF", "WGL", "Intl", "MonoIt", "MonoItalic", "Hand", "Handwritten",
+        // --- Optical/feature and obscure ---
+        "Caption", "Drop", "Glow", "Cond", "Cnd", "Ext", "Exp", "Cmp", "CmpIt", "CmpXBold", "CmpXLight", "CndIt", "CndXBold", "CndXLight", "CndMedium", "CndLight", "XLight", "XBold", "XXBold", "XXLight", "BK", "Bk", "MD", "Md", "BD", "Bd", "RG", "Rg",
+        // --- Compound style shorteners seen in filesystems ---
+        "Blk", "SuperBold", "Extra", "Ultra", "Wide", "Narrow", "CN", "Cd", "Wd",
+        // --- Numeric indicators (from One to NinetyNine) ---
+        "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine", "Ten",
+        "Eleven", "Twelve", "Thirteen", "Fourteen", "Fifteen", "Sixteen", "Seventeen", "Eighteen", "Nineteen", "Twenty",
+        "Thirty", "Forty", "Fifty", "Sixty", "Seventy", "Eighty", "Ninety", "Hundred",
+        // --- Edition and version ---
+        "V1", "V2", "V3", "V4", "V5", "V6",
+        // --- Misc collectors ---
+        "Base", "Inverted", "AltOne", "AltTwo", "Orig", "Original", "Outline", "Insert", "Delete", "Special", "Syntax", "BookItalic", "RomanItalic", "BookOblique", "MediumOblique", "BoldOblique", "TextBook", "Normal",
+        // --- Repeat some ambiguous ones for clarity ---
+        "Deck", "Sub", "Ex", "Expert", "Edit", "Ed", "LCI", "Lic", "LicID", "WID", "Goth", "Grotesk", "Grot", "Kap", "Klima", "Fatface",
+        // --- Explicitly include hundreds known from industry foundries ---
+        "Promo", "Demo", "Trial", "Test", "Doc", "RomanShadow", "ShadowRoman", "ShadowBold", "PosterItalic", "PosterBold",
     ];
 
     // 4. Remove *all* tokens that match any indicator, anywhere in the sequence (policy: not just trailing, but all known variants)

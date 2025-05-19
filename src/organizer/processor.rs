@@ -5,7 +5,7 @@ use std::sync::{Arc, Mutex};
 use rayon::prelude::*;
 use crate::error::Result;
 use crate::models::{Config, FontMetadata};
-use crate::font::metadata::extract_font_metadata;
+use crate::font::metadata::{extract_font_metadata, extract_root_family};
 use crate::utils::{
     ensure_directory_exists,
     safe_move_file,
@@ -79,10 +79,11 @@ pub fn organize_fonts(
     
     for (path, metadata) in &metadata_map {
         // Use normalized family name as the grouping key
-        let normalized_family = normalize_family_name(&metadata.family_name);
-        
+        let root_family = extract_root_family(&metadata.family_name);
+        let normalized_root_family = normalize_family_name(&root_family);
+
         family_groups
-            .entry(normalized_family)
+            .entry(normalized_root_family)
             .or_insert_with(Vec::new)
             .push((path.clone(), metadata.clone()));
     }
