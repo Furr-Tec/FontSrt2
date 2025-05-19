@@ -3,9 +3,9 @@ use std::io::Read;
 use std::path::Path;
 use font_kit::font::Font;
 use ttf_parser::Face;
-use crate::models::{Config, FontMetadata};
+use crate::models::{Config, FontMetadata, NamingPattern};
 use crate::error::{Result, Error};
-use crate::utils::log;
+use crate::utils::{log, clean_name};
 use super::{foundry::extract_foundry, weight::{determine_weight, is_italic_font}};
 
 /// Check if a file is a valid font file
@@ -82,5 +82,60 @@ pub fn extract_font_metadata(path: &Path, config: &Config) -> Result<Option<Font
             Err(Error::Font(format!("Failed to load font: {}", e)))
         }
     }
+}
+
+/// Check if a file is already organized in the correct structure and has the correct name
+pub fn is_already_organized(path: &Path, metadata: &FontMetadata, config: &Config) -> bool {
+    // Get parent directories
+    let parent = match path.parent() {
+        Some(p) => p,
+        None => return false,
+    };
+
+    // Get grandparent for hierarchy check
+    let grandparent = parent.parent();
+
+    // Check for foundry/family structure when using those patterns
+    if matches!(config.naming_pattern, NamingPattern::FoundryFamily | NamingPattern::FoundryFamilySubfamily) {
+        // Need both parent and grandparent
+        if grandparent.is_none() {
+            return false;
+        }
+
+        let parent_name = match parent.file_name().and_then(|n| n.to_str()) {
+            Some(name) => name,
+            None => return false,
+        };
+
+        let grandparent_name = match grandparent.unwrap().file_name().and_then(|n| n.to_str()) {
+            Some(name) => name,
+            None => return false,
+        };
+
+        // Check if parent is family name and grandparent is foundry name
+        if clean_name(&metadata.family_name) != parent_name || 
+           clean_name(&metadata.foundry) != grandparent_name {
+            return false;
+        }
+    } else {
+        // For other patterns, just check if parent is family name
+        let parent_name = match parent.file_name().and_then(|n| n.to_str()) {
+            Some(name) => name,
+            None => return false,
+        };
+
+        if clean_name(&metadata.family_name) != parent_name {
+            return false;
+        }
+    }
+
+    // Now check filename
+    let expected_filename = crate::utils::naming::generate_font_filename(metadata, &config.naming_pattern);
+    let actual_filename = match path.file_name().and_then(|n| n.to_str()) {
+        Some(name) => name,
+        None => return false,
+    };
+
+    actual_filename == expected_filename
 }
 

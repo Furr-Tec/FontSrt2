@@ -2,6 +2,8 @@
 name = "FontSrt"
 version = "0.1.0"
 edition = "2021"
+description = "A font sorting and organizing tool"
+authors = ["FontSrt Team"]
 
 [dependencies]
 font-kit = "0.14.2"
