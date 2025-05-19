@@ -101,7 +101,7 @@ pub fn extract_font_metadata(path: &Path, config: &Config) -> Result<Option<Font
 pub fn extract_root_family(family_name: &str) -> String {
     // Common subfamily markers to trigger root delimiting
     // This is heuristic: "Festivo Basic", "Festivo Lines", etc. ⇒ root = "Festivo"
-    // Can be extended as more project samples are discovered.
+    // Will now also handle numeric-suffixed variants, e.g., "Gerlach 100" ⇒ "Gerlach"
     const MARKERS: [&str; 11] = [
         "Basic", "Extras", "Lines", "Shadows", "Shadow", "Sketch", "Sketch1", "Sketch2", "Sketch3", "Extra", "Black"
     ];
@@ -112,9 +112,13 @@ pub fn extract_root_family(family_name: &str) -> String {
                 // Join tokens from 0..idx for the stable root
                 return tokens[..idx].join(" ");
             }
+            // NEW: treat numeric tokens as subfamily delimiters
+            if token.chars().all(|c| c.is_ascii_digit()) {
+                return tokens[..idx].join(" ");
+            }
         }
     }
-    // Return the whole family name if no marker match found
+    // Return the whole family name if no marker or numeric match found
     family_name.trim().to_string()
 }
 /// Check if a file is already organized in the correct structure and has the correct name
