@@ -4,91 +4,28 @@ use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 use rayon::prelude::*;
 use crate::error::{Result, Error};
-use crate::models::{Config, FontMetadata, NamingPattern};
+use crate::models::{Config, FontMetadata};
 use crate::font::metadata::extract_font_metadata;
 use crate::utils::{
     ensure_directory_exists,
     safe_move_file,
     clean_name,
     log,
+    format_font_name,
+    build_folder_path,
 };
 
-/// Format a font name based on naming pattern
-pub fn format_font_name(metadata: &FontMetadata, pattern: &NamingPattern) -> String {
-    use NamingPattern::*;
-    
-    match pattern {
-        FamilySubfamily => {
-            if metadata.subfamily.to_lowercase() == "regular" {
-                metadata.family_name.clone()
-            } else {
-                format!("{} ({})", metadata.family_name, metadata.subfamily)
-            }
-        },
-        FoundryFamilySubfamily => {
-            if metadata.subfamily.to_lowercase() == "regular" {
-                format!("{} {}", metadata.foundry, metadata.family_name)
-            } else {
-                format!("{} {} ({})", metadata.foundry, metadata.family_name, metadata.subfamily)
-            }
-        },
-        FamilyWeight => {
-            format!("{} {}{}", 
-                metadata.family_name, 
-                metadata.weight,
-                if metadata.is_italic { " Italic" } else { "" }
-            )
-        },
-        FoundryFamily => {
-            if metadata.subfamily.to_lowercase() == "regular" {
-                format!("{}_{}", metadata.foundry, metadata.family_name)
-            } else {
-                format!("{}_{} ({})", metadata.foundry, metadata.family_name, metadata.subfamily)
-            }
-        },
-    }
-}
+// The utility functions for formatting font names and building paths
+// have been moved to utils::naming module for better organization
 
-/// Generate a filename for a font based on its metadata
-pub fn generate_font_filename(metadata: &FontMetadata, pattern: &NamingPattern) -> String {
-    let base_name = format_font_name(metadata, pattern);
-    let extension = metadata.original_path
-        .extension()
-        .and_then(|ext| ext.to_str())
-        .unwrap_or("ttf")
-        .to_lowercase();
-
-    format!("{}.{}", clean_name(&base_name), extension)
-}
-
-/// Build the target folder path for a font
-fn build_folder_path(base_dir: &Path, metadata: &FontMetadata, config: &Config) -> PathBuf {
-    match config.naming_pattern {
-        NamingPattern::FoundryFamily => {
-            // Create a foundry/family structure
-            let foundry_dir = base_dir.join(clean_name(&metadata.foundry));
-            foundry_dir.join(clean_name(&metadata.family_name))
-        },
-        _ => {
-            if config.group_by_foundry {
-                // If grouping by foundry is enabled, create a foundry/family structure
-                let foundry_dir = base_dir.join(clean_name(&metadata.foundry));
-                foundry_dir.join(clean_name(&metadata.family_name))
-            } else {
-                // For all other patterns, just use family name as the directory
-                base_dir.join(clean_name(&metadata.family_name))
-            }
-        }
-    }
-}
 
 /// Organize fonts in a directory
 pub fn organize_fonts(
     dir: &Path,
     config: &Config,
     processed_files: Arc<Mutex<HashSet<PathBuf>>>,
-    family_folders: Arc<Mutex<HashMap<String, PathBuf>>>,
-    foundry_folders: Arc<Mutex<HashMap<String, PathBuf>>>,
+    _family_folders: Arc<Mutex<HashMap<String, PathBuf>>>,
+    _foundry_folders: Arc<Mutex<HashMap<String, PathBuf>>>,
 ) -> Result<()> {
     let duplicates_dir = dir.join("duplicates");
     ensure_directory_exists(&duplicates_dir, config)?;

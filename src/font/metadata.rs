@@ -5,7 +5,7 @@ use font_kit::font::Font;
 use ttf_parser::Face;
 use crate::models::{Config, FontMetadata, NamingPattern};
 use crate::error::{Result, Error};
-use crate::utils::{log, clean_name};
+use crate::utils::{log, clean_name, generate_font_filename};
 use super::{foundry::extract_foundry, weight::{determine_weight, is_italic_font}};
 
 /// Check if a file is a valid font file
@@ -130,7 +130,7 @@ pub fn is_already_organized(path: &Path, metadata: &FontMetadata, config: &Confi
     }
 
     // Now check filename
-    let expected_filename = crate::utils::naming::generate_font_filename(metadata, &config.naming_pattern);
+    let expected_filename = generate_font_filename(metadata, &config.naming_pattern);
     let actual_filename = match path.file_name().and_then(|n| n.to_str()) {
         Some(name) => name,
         None => return false,

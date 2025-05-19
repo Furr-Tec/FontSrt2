@@ -16,7 +16,7 @@ use crate::utils::{
 pub fn group_by_foundry(
     dir: &Path,
     config: &Config,
-    processed_files: Arc<Mutex<HashSet<PathBuf>>>,
+    _processed_files: Arc<Mutex<HashSet<PathBuf>>>,
     family_folders: Arc<Mutex<HashMap<String, PathBuf>>>,
     foundry_folders: Arc<Mutex<HashMap<String, PathBuf>>>,
 ) -> Result<()> {
