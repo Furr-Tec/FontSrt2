@@ -1,6 +1,6 @@
 use std::fs;
-use std::path::{Path, PathBuf};
-use crate::error::{Result, Error};
+use std::path::Path;
+use crate::error::Result;
 use crate::models::Config;
 use crate::utils::logging::log;
 

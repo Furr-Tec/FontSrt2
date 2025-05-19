@@ -3,9 +3,8 @@ use std::fs;
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 use std::io::{self, Write};
-use crate::error::{Result, Error};
+use crate::error::Result;
 use crate::models::Config;
-use crate::utils::log;
 use super::{processor::organize_fonts, group::group_by_foundry};
 
 /// Process multiple directories listed in a batch file

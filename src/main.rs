@@ -1,8 +1,7 @@
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 use std::env;
-use std::io::{self, Write};
 
 mod error;
 mod models;
@@ -14,10 +13,8 @@ mod cli;
 use error::{Result, Error};
 use models::Config;
 use utils::log;
-use utils::file::{ensure_directory_exists, safe_move_file, safe_move_directory, merge_directories};
 use cli::{parse_args, get_help_message, get_user_input, get_user_choice, ask_group_by_foundry};
 use organizer::{organize_fonts, batch_process, group_by_foundry};
-use font::{extract_font_metadata, is_valid_font_file, is_already_organized};
 
 fn main() -> Result<()> {
     let args: Vec<String> = env::args().collect();

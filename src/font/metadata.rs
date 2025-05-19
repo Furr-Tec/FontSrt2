@@ -85,6 +85,7 @@ pub fn extract_font_metadata(path: &Path, config: &Config) -> Result<Option<Font
 }
 
 /// Check if a file is already organized in the correct structure and has the correct name
+#[allow(dead_code)]
 pub fn is_already_organized(path: &Path, metadata: &FontMetadata, config: &Config) -> bool {
     // Get parent directories
     let parent = match path.parent() {

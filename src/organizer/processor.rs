@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 use rayon::prelude::*;
-use crate::error::{Result, Error};
+use crate::error::Result;
 use crate::models::{Config, FontMetadata};
 use crate::font::metadata::extract_font_metadata;
 use crate::utils::{

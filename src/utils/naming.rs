@@ -20,6 +20,7 @@ pub fn clean_name(name: &str) -> String {
 }
 
 /// Capitalize the first letter of each word in a string
+#[allow(dead_code)]
 pub fn capitalize_words(s: &str) -> String {
     s.split_whitespace()
         .map(|word| {
@@ -34,6 +35,7 @@ pub fn capitalize_words(s: &str) -> String {
 }
 
 /// Normalize a font family name by removing common variations
+#[allow(dead_code)]
 pub fn normalize_family_name(family_name: &str) -> String {
     let variations = vec![
         "Bold", "Italic", "Black", "Light", "Medium", "Thin", "Alt", "Semibold", "Oblique",

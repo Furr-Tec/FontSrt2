@@ -8,6 +8,7 @@ pub struct FontMetadata {
     /// Font subfamily (style variant)
     pub subfamily: String,
     /// Full font name
+    #[allow(dead_code)]
     pub full_name: String,
     /// Font foundry name
     pub foundry: String,
@@ -16,6 +17,7 @@ pub struct FontMetadata {
     /// Whether the font is italic
     pub is_italic: bool,
     /// Original path of the font file
+    #[allow(dead_code)]
     pub original_path: PathBuf,
 }
 
@@ -32,6 +34,7 @@ pub struct FontSignature {
 
 impl FontMetadata {
     /// Create a font signature from this metadata
+    #[allow(dead_code)]
     pub fn signature(&self) -> FontSignature {
         FontSignature {
             family_name: self.family_name.clone(),

@@ -14,8 +14,10 @@ pub enum Error {
     /// Configuration errors
     Config(String),
     /// Batch processing errors
+    #[allow(dead_code)]
     Batch(String),
     /// Font metadata extraction errors
+    #[allow(dead_code)]
     Metadata(String),
 }
 

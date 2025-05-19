@@ -46,6 +46,7 @@ impl Config {
     }
 
     /// Parse command line arguments and create a configuration
+    #[allow(dead_code)]
     pub fn from_args() -> crate::error::Result<Self> {
         use std::env;
         
