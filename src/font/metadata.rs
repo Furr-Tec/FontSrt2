@@ -19,7 +19,7 @@ pub fn is_valid_font_file(path: &Path, config: &Config) -> bool {
                     let is_valid_magic =
                         header == [0x00, 0x01, 0x00, 0x00] || // TTF
                         header == [0x4F, 0x54, 0x54, 0x4F];   // OTF
-                    
+
                     if is_valid_magic {
                         if let Ok(_face) = Face::parse(&fs::read(path).unwrap_or_default(), 0) {
                             log(config, format!("Valid font file: {}", path.display()));
@@ -88,10 +88,8 @@ pub fn extract_font_metadata(path: &Path, config: &Config) -> Result<Option<Font
 /// Extract the root family name (the true shared "family" for grouping).
 /// This handles cases where multiple subfamily/variant folders (e.g. "Festivo Basic", "Festivo Sketch1", "Festivo Sketch2") should be grouped under a common root ("Festivo").
 ///
-/// The heuristic splits the family name at the first non-root token. Tokens like "Basic", "Sketch", "Line", "Shadow", "Extra", etc. will be considered subfamily/subvariant markers if they come AFTER the root.
-/// If the family name is single-word or doesn't match this pattern, the whole family name is returned.
-///
-/// This function may be extended for broader family name normalization as patterns emerge.
+/// This function now uses a more conservative approach to prevent unrelated fonts from being grouped together.
+/// It preserves the full family name in most cases, only grouping fonts that are clearly part of the same family.
 ///
 /// # Arguments
 /// * `family_name` - Raw family name extracted from font metadata
@@ -99,45 +97,38 @@ pub fn extract_font_metadata(path: &Path, config: &Config) -> Result<Option<Font
 /// # Returns
 /// * `String` - The root family name to use for grouping
 pub fn extract_root_family(family_name: &str) -> String {
-    //! Improved heuristic to extract the true root family from complex font naming patterns.
-    //!
-    //! - Markers expanded with ["Drawn", "Rough", "Stamp", "Orn", "Titling", "Sm", "CF"]
-    //! - If three tokens and the third is a marker or numeric, treat the first two as root (e.g., "Golden Cockerel Orn" → "Golden Cockerel")
-    //! - Handles combinations with prior/numeric markers.
-    //! - For 4+ tokens with the third or fourth as marker/numeric, join tokens up to the marker or number.
-    //! - Defaults to full name if no split applies.
-
-    // Extended subfamily markers and suffixes.
-    const MARKERS: [&str; 18] = [
-        "Basic", "Extras", "Lines", "Shadows", "Shadow", "Sketch", "Sketch1", "Sketch2", "Sketch3",
-        "Extra", "Black", "Drawn", "Rough", "Stamp", "Orn", "Titling", "Sm", "CF"
-    ];
+    // Split the family name into tokens
     let tokens: Vec<&str> = family_name.split_whitespace().collect();
     let len = tokens.len();
-    if len >= 3 {
-        // Allow explicit two-word roots (e.g., Golden Cockerel Orn → Golden Cockerel)
-        // If the third token is a marker or numeric, join just the first two.
-        if MARKERS.iter().any(|m| m.eq_ignore_ascii_case(tokens[2])) || tokens[2].chars().all(|c| c.is_ascii_digit()) {
-            return format!("{} {}", tokens[0], tokens[1]);
+
+    // For single-word names, return as is
+    if len <= 1 {
+        return family_name.trim().to_string();
+    }
+
+    // For multi-word names, use a more conservative approach
+    if len >= 2 {
+        // Only group fonts with the same first word if:
+        // 1. The second word is very short (1-2 chars) AND
+        // 2. The first word is substantial (4+ chars)
+        if tokens[0].len() >= 4 && tokens[1].len() <= 2 {
+            // This handles cases like "Arial A", "Arial B", etc.
+            return tokens[0].to_string();
+        }
+
+        // For numeric suffixes like "Roboto 1", "Roboto 2"
+        if tokens[0].len() >= 4 && tokens[1].chars().all(|c| c.is_ascii_digit()) {
+            return tokens[0].to_string();
+        }
+
+        // For cases like "Breul A" and "Breul B" where the second word is a single letter
+        if tokens[0].len() >= 4 && tokens[1].len() == 1 && tokens[1].chars().next().unwrap().is_alphabetic() {
+            return tokens[0].to_string();
         }
     }
-    if len >= 4 {
-        // In rare cases with more tokens, join up through but not including the first marker/numeric found after the root
-        for (idx, token) in tokens.iter().enumerate().skip(2) {
-            if MARKERS.iter().any(|m| m.eq_ignore_ascii_case(token)) || token.chars().all(|c| c.is_ascii_digit()) {
-                return tokens[..idx].join(" ");
-            }
-        }
-    }
-    if len > 1 {
-        // Legacy heuristic for any marker/numeric from the second word onward
-        for (idx, token) in tokens.iter().enumerate().skip(1) {
-            if MARKERS.iter().any(|m| m.eq_ignore_ascii_case(token)) || token.chars().all(|c| c.is_ascii_digit()) {
-                return tokens[..idx].join(" ");
-            }
-        }
-    }
-    // Fallback: single-word name or no applicable split
+
+    // In all other cases, use the full family name
+    // This prevents unrelated fonts like "Hybrea", "Hybrid", "Hygge Sans" from being grouped together
     family_name.trim().to_string()
 }
 /// Check if a file is already organized in the correct structure and has the correct name
@@ -195,4 +186,3 @@ pub fn is_already_organized(path: &Path, metadata: &FontMetadata, config: &Confi
 
     actual_filename == expected_filename
 }
-
